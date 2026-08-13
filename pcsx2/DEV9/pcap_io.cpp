@@ -13,6 +13,7 @@
 #endif
 
 #include <stdio.h>
+#include "pcap.h"
 #include "pcap_io.h"
 #include "DEV9.h"
 #include "AdapterUtils.h"
@@ -20,9 +21,6 @@
 #include "PacketReader/EthernetFrame.h"
 #include "PacketReader/EthernetFrameEditor.h"
 #include "PacketReader/ARP/ARP_PacketEditor.h"
-#ifndef PCAP_NETMASK_UNKNOWN
-#define PCAP_NETMASK_UNKNOWN 0xffffffff
-#endif
 
 #ifdef _WIN32
 #define PCAPPREFIX "\\Device\\NPF_"
@@ -50,9 +48,18 @@ PCAPAdapter::PCAPAdapter()
 
 	switched = EmuConfig.DEV9.EthApi == Pcsx2Config::DEV9Options::NetApi::PCAP_Switched;
 
-	if (!InitPCAP(pcapAdapter, switched))
+	m_transport = PcapEthernetTransport::CreateDefault();
+	if (!m_transport->OpenLive(pcapAdapter, switched))
 	{
 		Console.Error("DEV9: Can't open Device '%s'", EmuConfig.DEV9.EthDevice.c_str());
+		m_transport.reset();
+		return;
+	}
+
+	if (!m_transport->ValidateEthernetDatalink())
+	{
+		Console.Error("DEV9: Can't open Device '%s'", EmuConfig.DEV9.EthDevice.c_str());
+		m_transport.reset();
 		return;
 	}
 
@@ -79,15 +86,13 @@ PCAPAdapter::PCAPAdapter()
 	else
 	{
 		Console.Error("DEV9: Failed to get MAC address for adapter");
-		pcap_close(hpcap);
-		hpcap = nullptr;
+		m_transport.reset();
 		return;
 	}
 
-	if (switched && !SetMACSwitchedFilter(ps2MAC))
+	if (switched && !m_transport->CompileAndSetSwitchedFilter(ps2MAC))
 	{
-		pcap_close(hpcap);
-		hpcap = nullptr;
+		m_transport.reset();
 		Console.Error("DEV9: Can't open Device '%s'", EmuConfig.DEV9.EthDevice.c_str());
 		return;
 	}
@@ -103,22 +108,22 @@ AdapterOptions PCAPAdapter::GetAdapterOptions()
 }
 bool PCAPAdapter::blocks()
 {
-	pxAssert(hpcap);
-	return blocking;
+	pxAssert(m_transport && m_transport->IsReady());
+	return m_transport->Blocking();
 }
 bool PCAPAdapter::isInitialised()
 {
-	return hpcap != nullptr;
+	return m_transport && m_transport->IsReady();
 }
 //gets a packet.rv :true success
 bool PCAPAdapter::recv(NetPacket* pkt)
 {
-	pxAssert(hpcap);
+	pxAssert(m_transport && m_transport->IsReady());
 
-	if (!blocking && NetAdapter::recv(pkt))
+	if (!m_transport->Blocking() && NetAdapter::recv(pkt))
 		return true;
 
-	while (RecvPCAPPacket(pkt))
+	while (m_transport->ReceiveOne(pkt))
 	{
 		if (!switched)
 			SetMACBridgedRecv(pkt);
@@ -145,7 +150,7 @@ bool PCAPAdapter::recv(NetPacket* pkt)
 //sends the packet .rv :true success
 bool PCAPAdapter::send(NetPacket* pkt)
 {
-	pxAssert(hpcap);
+	pxAssert(m_transport && m_transport->IsReady());
 
 	InspectSend(pkt);
 	if (NetAdapter::send(pkt))
@@ -155,39 +160,7 @@ bool PCAPAdapter::send(NetPacket* pkt)
 	if (!switched)
 		SetMACBridgedSend(pkt);
 
-	return SendPCAPPacket(pkt);
-}
-
-bool PCAPAdapter::RecvPCAPPacket(NetPacket* pkt)
-{
-	pcap_pkthdr* header;
-	const u_char* pkt_data;
-
-	// pcap bridged will pick up packets not intended for us, returning false on those packets will incur a 1ms wait.
-	// This delays getting packets we need, so instead loop untill a valid packet, or no packet, is returned from pcap_next_ex.
-	while (pcap_next_ex(hpcap, &header, &pkt_data) > 0)
-	{
-		// 1518 is the largest Ethernet frame we can get using an MTU of 1500 (assuming no VLAN tagging).
-		// This includes the FCS, which should be trimmed (PS2 SDK dosn't allow extra space for this).
-		if (header->len > 1518)
-		{
-			Console.Error("DEV9: Dropped jumbo frame of size: %u", header->len);
-			continue;
-		}
-
-		pxAssert(header->len == header->caplen);
-
-		memcpy(pkt->buffer, pkt_data, header->len);
-		pkt->size = static_cast<int>(header->len);
-		return true;
-	}
-
-	return false;
-}
-
-bool PCAPAdapter::SendPCAPPacket(const NetPacket* pkt)
-{
-	return pcap_sendpacket(hpcap, reinterpret_cast<const u_char*>(pkt->buffer), pkt->size) == 0;
+	return m_transport->Send(pkt);
 }
 
 void PCAPAdapter::reloadSettings()
@@ -200,14 +173,7 @@ void PCAPAdapter::reloadSettings()
 		ReloadInternalServer(nullptr);
 }
 
-PCAPAdapter::~PCAPAdapter()
-{
-	if (hpcap)
-	{
-		pcap_close(hpcap);
-		hpcap = nullptr;
-	}
-}
+PCAPAdapter::~PCAPAdapter() = default;
 
 std::vector<AdapterEntry> PCAPAdapter::GetAdapters()
 {
@@ -273,84 +239,6 @@ std::vector<AdapterEntry> PCAPAdapter::GetAdapters()
 	}
 
 	return nic;
-}
-
-// Opens device for capture and sets non-blocking.
-bool PCAPAdapter::InitPCAP(const std::string& adapter, bool promiscuous)
-{
-	char errbuf[PCAP_ERRBUF_SIZE];
-	Console.WriteLn("DEV9: Opening adapter '%s'...", adapter.c_str());
-
-	// Open the adapter.
-	if ((hpcap = pcap_open_live(adapter.c_str(), // Name of the device.
-			 65536, // portion of the packet to capture.
-			 // 65536 grants that the whole packet will be captured on all the MACs.
-			 promiscuous ? 1 : 0,
-			 1, // Read timeout.
-			 errbuf // Error buffer.
-			 )) == nullptr)
-	{
-		Console.Error("DEV9: %s", errbuf);
-#if defined(__linux__)
-		Console.Error("DEV9: PCAP on Linux requires CAP_NET_RAW and CAP_NET_ADMIN capabilities.");
-		Console.Error("DEV9: Flatpak: raw packet capture is not supported; use the Sockets backend instead.");
-		Console.Error("DEV9: AppImage: extract the image first (--appimage-extract), then run setcap on the extracted binary.");
-		Console.Error("DEV9: Note: applying file capabilities to the main PCSX2 executable breaks Steam overlay/Input.");
-#endif
-		Console.Error("DEV9: Unable to open the adapter. %s is not supported by pcap", adapter.c_str());
-		return false;
-	}
-
-	if (pcap_setnonblock(hpcap, 1, errbuf) == -1)
-	{
-		Console.Error("DEV9: Error setting non-blocking: %s", pcap_geterr(hpcap));
-		Console.Error("DEV9: Continuing in blocking mode");
-		blocking = true;
-	}
-	else
-		blocking = false;
-
-	// Validate.
-	const int dlt = pcap_datalink(hpcap);
-	const char* dlt_name = pcap_datalink_val_to_name(dlt);
-
-	Console.WriteLn("DEV9: Device uses DLT %d: %s", dlt, dlt_name);
-	switch (dlt)
-	{
-		case DLT_EN10MB:
-			//case DLT_IEEE802_11:
-			break;
-		default:
-			Console.Error("ERROR: Unsupported DataLink Type (%d): %s", dlt, dlt_name);
-			pcap_close(hpcap);
-			hpcap = nullptr;
-			return false;
-	}
-
-	Console.WriteLn("DEV9: Adapter Ok.");
-	return true;
-}
-
-bool PCAPAdapter::SetMACSwitchedFilter(MAC_Address mac)
-{
-	bpf_program fp;
-
-	char filter[128];
-	std::snprintf(filter, std::size(filter), "ether broadcast or ether dst %.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
-		mac.bytes[0], mac.bytes[1], mac.bytes[2], mac.bytes[3], mac.bytes[4], mac.bytes[5]);
-
-	if (pcap_compile(hpcap, &fp, filter, 1, PCAP_NETMASK_UNKNOWN) == -1)
-	{
-		Console.Error("DEV9: Error calling pcap_compile: %s", pcap_geterr(hpcap));
-		return false;
-	}
-
-	int setFilterRet;
-	if ((setFilterRet = pcap_setfilter(hpcap, &fp)) == -1)
-		Console.Error("DEV9: Error setting filter: %s", pcap_geterr(hpcap));
-
-	pcap_freecode(&fp);
-	return setFilterRet != -1;
 }
 
 void PCAPAdapter::SetMACBridgedRecv(NetPacket* pkt)

@@ -3,6 +3,8 @@
 
 #include "DEV9/pcap_io.h"
 
+#include "pcap.h"
+
 static HMODULE hpcap = nullptr;
 
 #define FUNCTION_SHIM_HEAD_NO_ARGS(retType, name) \

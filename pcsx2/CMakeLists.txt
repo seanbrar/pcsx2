@@ -316,6 +316,8 @@ set(pcsx2DEV9Sources
 	DEV9/sockets.cpp
 	DEV9/DEV9.cpp
 	DEV9/flash.cpp
+	DEV9/LibPcapEthernetTransport.cpp
+	DEV9/PcapEthernetTransport.cpp
 	DEV9/pcap_io.cpp
 	DEV9/net.cpp
 	)
@@ -351,6 +353,8 @@ set(pcsx2DEV9Headers
 	DEV9/PacketReader/MAC_Address.h
 	DEV9/PacketReader/NetLib.h
 	DEV9/PacketReader/Payload.h
+	DEV9/LibPcapEthernetTransport.h
+	DEV9/PcapEthernetTransport.h
 	DEV9/pcap_io.h
 	DEV9/Sessions/BaseSession.h
 	DEV9/Sessions/ICMP_Session/ICMP_Session.h

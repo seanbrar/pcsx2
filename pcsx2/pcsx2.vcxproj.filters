@@ -926,6 +926,12 @@
     <ClCompile Include="DEV9\PacketReader\EthernetFrameEditor.cpp">
       <Filter>System\Ps2\DEV9\PacketReader</Filter>
     </ClCompile>
+    <ClCompile Include="DEV9\LibPcapEthernetTransport.cpp">
+      <Filter>System\Ps2\DEV9</Filter>
+    </ClCompile>
+    <ClCompile Include="DEV9\PcapEthernetTransport.cpp">
+      <Filter>System\Ps2\DEV9</Filter>
+    </ClCompile>
     <ClCompile Include="DEV9\pcap_io.cpp">
       <Filter>System\Ps2\DEV9</Filter>
     </ClCompile>
@@ -1840,6 +1846,12 @@
     </ClInclude>
     <ClInclude Include="DEV9\PacketReader\Payload.h">
       <Filter>System\Ps2\DEV9\PacketReader</Filter>
+    </ClInclude>
+    <ClInclude Include="DEV9\LibPcapEthernetTransport.h">
+      <Filter>System\Ps2\DEV9</Filter>
+    </ClInclude>
+    <ClInclude Include="DEV9\PcapEthernetTransport.h">
+      <Filter>System\Ps2\DEV9</Filter>
     </ClInclude>
     <ClInclude Include="DEV9\pcap_io.h">
       <Filter>System\Ps2\DEV9</Filter>

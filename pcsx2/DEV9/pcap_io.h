@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
-#include "pcap.h"
+
+#include <memory>
+
 #include "net.h"
+#include "PcapEthernetTransport.h"
 #include "PacketReader/MAC_Address.h"
 
 #ifdef _WIN32
@@ -14,10 +17,9 @@ void unload_pcap();
 class PCAPAdapter : public NetAdapter
 {
 private:
-	pcap_t* hpcap = nullptr;
+	std::unique_ptr<PcapEthernetTransport> m_transport;
 
 	bool switched;
-	bool blocking;
 
 	PacketReader::IP::IP_Address ps2IP{};
 	PacketReader::MAC_Address hostMAC;
@@ -36,12 +38,6 @@ public:
 	static AdapterOptions GetAdapterOptions();
 
 private:
-	bool InitPCAP(const std::string& adapter, bool promiscuous);
-	bool SetMACSwitchedFilter(PacketReader::MAC_Address mac);
-
-	bool RecvPCAPPacket(NetPacket* pkt);
-	bool SendPCAPPacket(const NetPacket* pkt);
-
 	void SetMACBridgedRecv(NetPacket* pkt);
 	void SetMACBridgedSend(NetPacket* pkt);
 

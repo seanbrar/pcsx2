@@ -189,6 +189,8 @@
     <ClCompile Include="DEV9\PacketReader\IP\UDP\UDP_Packet.cpp" />
     <ClCompile Include="DEV9\PacketReader\IP\IP_Options.cpp" />
     <ClCompile Include="DEV9\PacketReader\IP\IP_Packet.cpp" />
+    <ClCompile Include="DEV9\LibPcapEthernetTransport.cpp" />
+    <ClCompile Include="DEV9\PcapEthernetTransport.cpp" />
     <ClCompile Include="DEV9\pcap_io.cpp" />
     <ClCompile Include="DEV9\Sessions\ICMP_Session\ICMP_Session.cpp" />
     <ClCompile Include="DEV9\Sessions\TCP_Session\TCP_Session.cpp" />
@@ -636,6 +638,8 @@
     <ClInclude Include="DEV9\PacketReader\IP\IP_Payload.h" />
     <ClInclude Include="DEV9\PacketReader\NetLib.h" />
     <ClInclude Include="DEV9\PacketReader\Payload.h" />
+    <ClInclude Include="DEV9\LibPcapEthernetTransport.h" />
+    <ClInclude Include="DEV9\PcapEthernetTransport.h" />
     <ClInclude Include="DEV9\pcap_io.h" />
     <ClInclude Include="DEV9\Sessions\BaseSession.h" />
     <ClInclude Include="DEV9\Sessions\ICMP_Session\ICMP_Session.h" />
